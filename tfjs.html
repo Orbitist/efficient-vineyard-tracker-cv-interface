@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Webcam Object Detection</title>
+  </head>
+  <body>
+    <div>
+      <video id="video" width="640" height="480" autoplay muted></video>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <!-- <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script> -->
+    <script>
+      async function start() {
+        // Load your custom trained model
+        const model = await tf.loadGraphModel('./tfjsexport/model.json');
+
+        // Get a reference to the HTML video element
+        const video = document.getElementById('video');
+
+        // Create a canvas element to draw on
+        const canvas = document.createElement('canvas');
+        canvas.width = video.width;
+        canvas.height = video.height;
+        document.body.appendChild(canvas);
+
+        // Get a reference to the canvas context
+        const context = canvas.getContext('2d');
+
+        // Start the webcam stream
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+
+        // Run the object detection on each video frame
+        setInterval(async () => {
+          // Convert the video frame to a tensor
+          const tensor = tf.browser.fromPixels(video);
+
+          // Resize the tensor to match the input shape of the model
+          const resized = tf.image.resizeBilinear(tensor, [inputHeight, inputWidth]);
+
+          // Normalize the pixel values to be between -1 and 1
+          const normalized = resized.sub(255 / 2).div(255 / 2);
+
+          // Expand the tensor to add a batch dimension
+          const batched = normalized.expandDims(0);
+
+          // Run the object detection on the batched tensor
+          const predictions = await model.executeAsync(batched);
+
+          // Draw the bounding boxes and labels on the canvas
+          context.clearRect(0, 0, canvas.width, canvas.height);
+          for (let i = 0; i < predictions.length; i++) {
+            const prediction = predictions[i];
+            const boxes = prediction.get('detection_boxes').arraySync()[0];
+            const scores = prediction.get('detection_scores').arraySync()[0];
+            const classes = prediction.get('detection_classes').arraySync()[0];
+            for (let j = 0; j < scores.length; j++) {
+              if (scores[j] > scoreThreshold) {
+                const bbox = [
+                  boxes[j][1] * video.width,
+                  boxes[j][0] * video.height,
+                  (boxes[j][3] - boxes[j][1]) * video.width,
+                  (boxes[j][2] - boxes[j][0]) * video.height,
+                ];
+                context.beginPath();
+                context.rect(...bbox);
+                context.lineWidth = 2;
+                context.strokeStyle = 'green';
+                context.fillStyle = 'green';
+                context.stroke();
+                context.fillText(classes[j], bbox[0], bbox[1]);
+              }
+            }
+            prediction.dispose();
+          }
+
+          // Dispose the tensors
+          tensor.dispose();
+          resized.dispose();
+          normalized.dispose();
+          batched.dispose();
+        }, 100);
+      }
+
+
+      start();
+    </script>
+  </body>
+</html>
