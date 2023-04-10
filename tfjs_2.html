@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Object Detection Example</title>
+  </head>
+  <body>
+    <h1>Object Detection Example</h1>
+    <video id="video" width="640" height="480" autoplay></video>
+    <canvas id="canvas" width="640" height="480"></canvas>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.9.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@3.0.0/dist/coco-ssd.min.js"></script>
+    <script>
+      // Load the Coco SSD model
+      async function loadModel() {
+        const model = await tf.loadGraphModel('https://labs.orbitist.com/efficient-vineyard-tracker-cv-interface/tfjsexport/model.json');
+        return model;
+      }
+
+      // Detect objects in the video stream
+      async function detectObjects(model, video) {
+        // Load the model
+        await model;
+        
+        // Get the video stream
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        
+        // Start detecting objects
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const input = tf.browser.fromPixels(canvas);
+        const results = await model.executeAsync({ image_tensor: input.expandDims(0) });
+        const boxes = results[0].arraySync()[0];
+        const classes = results[1].arraySync()[0];
+        const scores = results[2].arraySync()[0];
+        results.forEach((tensor) => tensor.dispose());
+        
+        // Draw bounding boxes around the detected objects
+        for (let i = 0; i < scores.length; i++) {
+          if (scores[i] > 0.5) {
+            const ymin = boxes[i][0] * canvas.height;
+            const xmin = boxes[i][1] * canvas.width;
+            const ymax = boxes[i][2] * canvas.height;
+            const xmax = boxes[i][3] * canvas.width;
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(xmin, ymin, xmax - xmin, ymax - ymin);
+            ctx.fillStyle = 'red';
+            ctx.fillText(classes[i] + ' ' + Math.round(scores[i] * 100) + '%', xmin + 5, ymin + 20);
+          }
+        }
+        
+        // Call detectObjects() recursively to continue detecting objects
+        requestAnimationFrame(() => detectObjects(model, video));
+      }
+
+      // Main function
+      async function main() {
+        const model = loadModel();
+        const video = document.getElementById('video');
+        detectObjects(model, video);
+      }
+
+      main();
+    </script>
+  </body>
+</html>
